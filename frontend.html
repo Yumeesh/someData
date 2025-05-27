@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sales Forecast Dashboard</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 2rem; background: #f7f7f7; }
+        .container { background: #fff; padding: 2rem; border-radius: 8px; max-width: 700px; margin: auto; box-shadow: 0 2px 8px #0001; }
+        h1 { text-align: center; }
+        .filters { display: flex; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.5rem; }
+        .filter-group { flex: 1 1 200px; }
+        label { font-weight: bold; display: block; margin-bottom: 0.3rem; }
+        select { width: 100%; padding: 0.4rem; border-radius: 4px; border: 1px solid #ccc; }
+        button { background: #007bff; color: #fff; border: none; padding: 0.7rem 1.5rem; border-radius: 4px; cursor: pointer; font-size: 1rem; }
+        button:disabled { background: #aaa; }
+        .results { margin-top: 2rem; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        th, td { border: 1px solid #ddd; padding: 0.5rem; text-align: center; }
+        th { background: #f0f0f0; }
+        .plot-img { margin-top: 2rem; display: block; max-width: 100%; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Sales Forecast Dashboard</h1>
+        <form id="filterForm">
+            <div class="filters" id="filters"></div>
+            <label for="periods">Forecast Period (days):</label>
+            <input type="number" id="periods" name="periods" value="30" min="1" max="365" style="width: 100px;">
+            <br><br>
+            <button type="submit">Get Forecast</button>
+        </form>
+        <div class="results" id="results"></div>
+        <img id="plotImg" class="plot-img" style="display:none;" />
+    </div>
+    <script>
+        const filtersDiv = document.getElementById('filters');
+        const resultsDiv = document.getElementById('results');
+        const plotImg = document.getElementById('plotImg');
+        let filterOptions = {};
+
+        async function fetchFilters() {
+            const res = await fetch('/filters');
+            filterOptions = await res.json();
+            filtersDiv.innerHTML = '';
+            Object.entries(filterOptions).forEach(([key, values]) => {
+                const group = document.createElement('div');
+                group.className = 'filter-group';
+                const label = document.createElement('label');
+                label.textContent = key;
+                group.appendChild(label);
+                const select = document.createElement('select');
+                select.name = key;
+                select.multiple = true;
+                values.forEach(val => {
+                    const option = document.createElement('option');
+                    option.value = val;
+                    option.textContent = val;
+                    select.appendChild(option);
+                });
+                group.appendChild(select);
+                filtersDiv.appendChild(group);
+            });
+        }
+
+        async function fetchForecast(filters, periods) {
+            resultsDiv.innerHTML = 'Loading...';
+            plotImg.style.display = 'none';
+            const res = await fetch('/forecast', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filters, periods })
+            });
+            if (!res.ok) {
+                resultsDiv.innerHTML = 'No data found for the selected filters.';
+                return;
+            }
+            const data = await res.json();
+            if (!data.length) {
+                resultsDiv.innerHTML = 'No forecast data.';
+                return;
+            }
+            let html = '<table><tr><th>Date</th><th>Forecast</th><th>Lower</th><th>Upper</th></tr>';
+            data.forEach(row => {
+                html += `<tr><td>${row.ds.split('T')[0]}</td><td>${row.yhat.toFixed(2)}</td><td>${row.yhat_lower.toFixed(2)}</td><td>${row.yhat_upper.toFixed(2)}</td></tr>`;
+            });
+            html += '</table>';
+            resultsDiv.innerHTML = html;
+            // Fetch and display plot
+            fetchPlot(filters, periods);
+        }
+
+        async function fetchPlot(filters, periods) {
+            const res = await fetch('/plot', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filters, periods })
+            });
+            if (!res.ok) {
+                plotImg.style.display = 'none';
+                return;
+            }
+            const data = await res.json();
+            plotImg.src = 'data:image/png;base64,' + data.plot_base64;
+            plotImg.style.display = 'block';
+        }
+
+        document.getElementById('filterForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const filters = {};
+            Object.keys(filterOptions).forEach(key => {
+                const selected = Array.from(document.getElementsByName(key)[0].selectedOptions).map(o => o.value);
+                if (selected.length) filters[key] = selected;
+            });
+            const periods = parseInt(formData.get('periods')) || 30;
+            fetchForecast(filters, periods);
+        });
+
+        fetchFilters();
+    </script>
+</body>
+</html>
