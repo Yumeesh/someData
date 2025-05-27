@@ -32,12 +32,10 @@
             <button type="submit">Get Forecast</button>
         </form>
         <div class="results" id="results"></div>
-        <img id="plotImg" class="plot-img" style="display:none;" />
     </div>
     <script>
         const filtersDiv = document.getElementById('filters');
         const resultsDiv = document.getElementById('results');
-        const plotImg = document.getElementById('plotImg');
         let filterOptions = {};
 
         async function fetchFilters() {
@@ -66,7 +64,6 @@
 
         async function fetchForecast(filters, periods) {
             resultsDiv.innerHTML = 'Loading...';
-            plotImg.style.display = 'none';
             const res = await fetch('/forecast', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -98,12 +95,14 @@
                 body: JSON.stringify({ filters, periods })
             });
             if (!res.ok) {
-                plotImg.style.display = 'none';
+                // Handle error, perhaps by alerting the user
+                console.error("Failed to fetch plot.");
                 return;
             }
             const data = await res.json();
-            plotImg.src = 'data:image/png;base64,' + data.plot_base64;
-            plotImg.style.display = 'block';
+            const plotWindow = window.open("", "_blank");
+            plotWindow.document.write('<img src="data:image/png;base64,' + data.plot_base64 + '" />');
+            plotWindow.document.title = "Forecast Plot"; // Optional: set a title for the new tab
         }
 
         document.getElementById('filterForm').addEventListener('submit', function(e) {
