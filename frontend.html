@@ -19,6 +19,7 @@
         th, td { border: 1px solid #ddd; padding: 0.5rem; text-align: center; }
         th { background: #f0f0f0; }
         .plot-img { margin-top: 2rem; display: block; max-width: 100%; }
+        .genai-insights { margin-top: 2rem; padding: 1rem; background: #f9f9f9; border-left: 4px solid #007bff; }
     </style>
 </head>
 <body>
@@ -30,8 +31,15 @@
             <input type="number" id="periods" name="periods" value="30" min="1" max="365" style="width: 100px;">
             <br><br>
             <button type="submit">Get Forecast</button>
+            <button type="button" id="genaiBtn">Get GenAI Insights</button>
+            <button type="button" id="genaiConsolidatedBtn">Consolidated Insights</button>
+            <button type="button" id="genaiForecastSummaryBtn">GenAI Forecast Summary</button>
         </form>
         <div class="results" id="results"></div>
+        <div id="genai-insights" style="margin-top:2rem;"></div>
+        <div id="genai-recommendations" style="margin-top:1rem;"></div>
+        <div id="genai-consolidated" style="margin-top:2rem;"></div>
+        <div id="genai-forecast-summary" style="margin-top:2rem;"></div>
     </div>
     <script>
         const filtersDiv = document.getElementById('filters');
@@ -105,6 +113,60 @@
             plotWindow.document.title = "Forecast Plot"; // Optional: set a title for the new tab
         }
 
+        async function fetchGenAIInsights(filters, periods) {
+            document.getElementById('genai-insights').innerHTML = 'Loading GenAI insights...';
+            document.getElementById('genai-recommendations').innerHTML = '';
+            const res = await fetch('/genai-insights', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filters, periods })
+            });
+            if (!res.ok) {
+                document.getElementById('genai-insights').innerHTML = '<b>No GenAI insights available.</b>';
+                document.getElementById('genai-recommendations').innerHTML = '';
+                return;
+            }
+            const data = await res.json();
+            document.getElementById('genai-insights').innerHTML = `<b>GenAI Insights:</b><br>${data.genai_insights || ''}`;
+            if (data.recommendations && data.recommendations.length) {
+                let recHtml = '<b>Recommendations:</b><ul>';
+                data.recommendations.forEach(r => { recHtml += `<li>${r}</li>`; });
+                recHtml += '</ul>';
+                document.getElementById('genai-recommendations').innerHTML = recHtml;
+            } else {
+                document.getElementById('genai-recommendations').innerHTML = '';
+            }
+        }
+
+        async function fetchGenAIConsolidated(filters, periods) {
+            document.getElementById('genai-consolidated').innerHTML = 'Loading consolidated insights...';
+            const res = await fetch('/genai-consolidated-insights', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filters, periods })
+            });
+            if (!res.ok) {
+                document.getElementById('genai-consolidated').innerHTML = '<b>No consolidated insights available.</b>';
+                return;
+            }
+            const data = await res.json();
+            let html = '<b>Consolidated GenAI Insights:</b>';
+            for (const group in data) {
+                html += `<h3>${group}</h3>`;
+                for (const val in data[group]) {
+                    const insight = data[group][val];
+                    html += `<div style='margin-bottom:1em;'><b>${val}</b><br>Insight: ${insight.genai_insights || ''}`;
+                    if (insight.recommendations && insight.recommendations.length) {
+                        html += '<ul>';
+                        insight.recommendations.forEach(r => { html += `<li>${r}</li>`; });
+                        html += '</ul>';
+                    }
+                    html += '</div>';
+                }
+            }
+            document.getElementById('genai-consolidated').innerHTML = html;
+        }
+
         document.getElementById('filterForm').addEventListener('submit', function(e) {
             e.preventDefault();
             const formData = new FormData(e.target);
@@ -115,6 +177,31 @@
             });
             const periods = parseInt(formData.get('periods')) || 30;
             fetchForecast(filters, periods);
+            fetchGenAIInsights(filters, periods);
+        });
+
+        document.getElementById('genaiBtn').addEventListener('click', function() {
+            const filters = {};
+            Object.keys(filterOptions).forEach(key => {
+                const selected = Array.from(document.getElementsByName(key)[0].selectedOptions).map(o => o.value);
+                if (selected.length) filters[key] = selected;
+            });
+            const periods = parseInt(document.getElementById('periods').value) || 30;
+            fetchGenAIInsights(filters, periods);
+        });
+
+        document.getElementById('genaiConsolidatedBtn').addEventListener('click', function() {
+            const filters = {};
+            Object.keys(filterOptions).forEach(key => {
+                const selected = Array.from(document.getElementsByName(key)[0].selectedOptions).map(o => o.value);
+                if (selected.length) filters[key] = selected;
+            });
+            const periods = parseInt(document.getElementById('periods').value) || 30;
+            fetchGenAIConsolidated(filters, periods);
+        });
+
+        document.getElementById('genaiForecastSummaryBtn').addEventListener('click', function() {
+            window.open('/genai-forecast-summary', '_blank');
         });
 
         fetchFilters();

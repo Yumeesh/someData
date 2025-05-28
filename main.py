@@ -3,8 +3,11 @@ from fastapi.responses import HTMLResponse, Response, RedirectResponse
 from pydantic import BaseModel
 from typing import Dict, List, Optional
 from utils import get_unique_filters, load_data
+from genai_insights import get_sales_insights_and_recommendations
 import pandas as pd
 import os
+from fastapi import BackgroundTasks
+import asyncio
 
 app = FastAPI(title="Dynamic Sales Forecasting API")
 
@@ -121,6 +124,74 @@ def plot_img_view(filename: str):
         b64 = f.read()
     # Render just the image in a blank page
     return f'<html><head><title>{filename}</title></head><body style="margin:0;"><img src="data:image/png;base64,{b64}" style="display:block;max-width:100vw;max-height:100vh;margin:auto;" /></body></html>'
+
+# --- GENAI ENDPOINTS REWRITE ---
+
+def run_async_genai(func, *args, **kwargs):
+    import asyncio
+    try:
+        return asyncio.run(func(*args, **kwargs))
+    except RuntimeError:
+        # If already in an event loop (e.g. Jupyter), create a new loop
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(func(*args, **kwargs))
+        loop.close()
+        return result
+
+@app.post("/genai-insights")
+def genai_insights_endpoint(request: ForecastRequest):
+    from utils import filter_sales_data, forecast_sales
+    from genai_insights import get_genai_single_insights
+    df = load_data()
+    filtered_df = filter_sales_data(df, request.filters or {})
+    if filtered_df.empty:
+        raise HTTPException(status_code=404, detail="No data found for the given filters.")
+    forecast_df = forecast_sales(filtered_df, request.periods)
+    forecast_data = forecast_df.to_dict(orient="records")
+    insights = run_async_genai(get_genai_single_insights, forecast_data)
+    return insights
+
+@app.post("/genai-consolidated-insights")
+def genai_consolidated_insights(request: ForecastRequest):
+    from utils import filter_sales_data, forecast_sales
+    from genai_insights import get_genai_consolidated_insights
+    df = load_data()
+    group_cols = ["Sales Head", "Regional Manager", "Product", "Region"]
+    results = run_async_genai(get_genai_consolidated_insights, df, group_cols, request.periods)
+    return results
+
+@app.get("/genai-forecast-summary-json")
+def genai_forecast_summary_json():
+    from utils import filter_sales_data, forecast_sales
+    from genai_insights import get_genai_forecast_summary
+    df = load_data()
+    group_cols = ["Product", "Region", "Sales office", "Sales Head"]
+    summary = run_async_genai(get_genai_forecast_summary, df, group_cols)
+    return summary
+
+@app.get("/genai-forecast-summary", response_class=HTMLResponse)
+def genai_forecast_summary():
+    import requests
+    url = "http://localhost:8000/genai-forecast-summary-json"
+    try:
+        resp = requests.get(url)
+        data = resp.json()
+    except Exception as e:
+        return f"<h2>Error fetching summary: {e}</h2>"
+    html = "<h2>GenAI Forecast Summary</h2>"
+    html += "<h3>Insights & Forecasts</h3><ul>"
+    for item in data.get('insights_forecast', []):
+        for k, v in item.items():
+            if v.get('Insight') or v.get('Forecast'):
+                html += f"<li><b>{k}</b>:<br>Insight: {v.get('Insight', 'No insight generated.')}<br>Forecast: {v.get('Forecast', 'No forecast generated.')}</li>"
+    html += "</ul><h3>Recommendations</h3><ul>"
+    for item in data.get('recommendations', []):
+        for k, v in item.items():
+            if v:
+                html += f"<li><b>{k}</b>: {v}</li>"
+    html += "</ul>"
+    return f"<html><head><title>GenAI Forecast Summary</title></head><body>{html}</body></html>"
 
 # Serve the frontend.html as index
 @app.get("/", response_class=HTMLResponse)
