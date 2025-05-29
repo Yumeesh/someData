@@ -148,7 +148,7 @@ async def get_genai_consolidated_insights(df, group_cols, periods):
                 print(f"[Warning] Failed to parse Gemini response as JSON: {e}")
     return results
 
-async def get_genai_forecast_summary(df, group_cols):
+async def get_genai_forecast_summary(df, group_cols, periods=30, period_type="days"):
     from utils import filter_sales_data, forecast_sales
     from autogen_core.models import UserMessage
     from autogen_ext.models.openai import OpenAIChatCompletionClient
@@ -161,7 +161,7 @@ async def get_genai_forecast_summary(df, group_cols):
             filtered = filter_sales_data(df, {col: [val]})
             if filtered.empty:
                 continue
-            forecast_df = forecast_sales(filtered, 30)
+            forecast_df = forecast_sales(filtered, periods)
             forecast_data = forecast_df.to_dict(orient="records")
             forecast_data = [row for row in forecast_data if row.get('yhat') is not None]
             if not forecast_data:
@@ -173,7 +173,7 @@ async def get_genai_forecast_summary(df, group_cols):
             target = targets.get(col, 4000)
             prompt = (
                 f"You are a senior sales analytics expert. Analyze the following forecasted sales data for the group: {col} = {val}. "
-                f"The sales target for this group is {target}.\n"
+                f"The sales target for this group is {target}. The forecast period is {periods} {period_type}.\n"
                 "Use sales language and provide:\n"
                 "1. A one-line insight about the trend and target (mention if the forecast meets or misses the target, use numbers/percentages, do not mention time or (start: ...)).\n"
                 "2. A one-line forecast summary (no time, just the value and target comparison).\n"

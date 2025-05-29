@@ -27,12 +27,16 @@
         <h1>Sales Forecast Dashboard</h1>
         <form id="filterForm">
             <div class="filters" id="filters"></div>
-            <label for="periods">Forecast Period (days):</label>
+            <label for="periods">Forecast Period:</label>
             <input type="number" id="periods" name="periods" value="30" min="1" max="365" style="width: 100px;">
+            <select id="periodType" name="periodType" style="width: 120px; margin-left: 10px;">
+                <option value="days" selected>Days</option>
+                <option value="years">Years</option>
+            </select>
             <br><br>
             <button type="submit">Get Forecast</button>
-            <button type="button" id="genaiBtn">Get GenAI Insights</button>
-            <button type="button" id="genaiConsolidatedBtn">Consolidated Insights</button>
+            <!-- <button type="button" id="genaiBtn">Get GenAI Insights</button> -->
+            <!-- <button type="button" id="genaiConsolidatedBtn">Consolidated Insights</button> -->
             <button type="button" id="genaiForecastSummaryBtn">GenAI Forecast Summary</button>
             <button type="button" id="genaiRecommendationsBtn">GenAI Recommendations</button>
         </form>
@@ -71,24 +75,41 @@
             });
         }
 
-        async function fetchForecast(filters, periods) {
+        document.getElementById('filterForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const filters = {};
+            Object.keys(filterOptions).forEach(key => {
+                const selected = Array.from(document.getElementsByName(key)[0].selectedOptions).map(o => o.value);
+                if (selected.length) filters[key] = selected;
+            });
+            let periods = parseInt(formData.get('periods')) || 30;
+            const periodType = document.getElementById('periodType').value;
+            if (periodType === 'years') {
+                periods = periods * 365;
+            }
+            fetchForecast(filters, periods, periodType);
+        });
+
+        async function fetchForecast(filters, periods, periodType) {
             resultsDiv.innerHTML = 'Loading...';
             const res = await fetch('/forecast', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ filters, periods })
+                body: JSON.stringify({ filters, periods, period_type: periodType })
             });
             if (!res.ok) {
                 resultsDiv.innerHTML = 'No data found for the selected filters.';
                 return;
             }
             const data = await res.json();
-            if (!data.length) {
+            if (!data.forecast || !data.forecast.length) {
                 resultsDiv.innerHTML = 'No forecast data.';
                 return;
             }
-            let html = '<table><tr><th>Date</th><th>Forecast</th><th>Lower</th><th>Upper</th></tr>';
-            data.forEach(row => {
+            let html = `<b>Forecast Period: ${data.periods} ${data.period_type}</b>`;
+            html += '<table><tr><th>Date</th><th>Forecast</th><th>Lower</th><th>Upper</th></tr>';
+            data.forecast.forEach(row => {
                 html += `<tr><td>${row.ds.split('T')[0]}</td><td>${row.yhat.toFixed(2)}</td><td>${row.yhat_lower.toFixed(2)}</td><td>${row.yhat_upper.toFixed(2)}</td></tr>`;
             });
             html += '</table>';
@@ -168,43 +189,11 @@
             document.getElementById('genai-consolidated').innerHTML = html;
         }
 
-        document.getElementById('filterForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            const formData = new FormData(e.target);
-            const filters = {};
-            Object.keys(filterOptions).forEach(key => {
-                const selected = Array.from(document.getElementsByName(key)[0].selectedOptions).map(o => o.value);
-                if (selected.length) filters[key] = selected;
-            });
-            const periods = parseInt(formData.get('periods')) || 30;
-            fetchForecast(filters, periods);
-            fetchGenAIInsights(filters, periods);
-        });
-
-        document.getElementById('genaiBtn').addEventListener('click', function() {
-            const filters = {};
-            Object.keys(filterOptions).forEach(key => {
-                const selected = Array.from(document.getElementsByName(key)[0].selectedOptions).map(o => o.value);
-                if (selected.length) filters[key] = selected;
-            });
-            const periods = parseInt(document.getElementById('periods').value) || 30;
-            fetchGenAIInsights(filters, periods);
-        });
-
-        document.getElementById('genaiConsolidatedBtn').addEventListener('click', function() {
-            const filters = {};
-            Object.keys(filterOptions).forEach(key => {
-                const selected = Array.from(document.getElementsByName(key)[0].selectedOptions).map(o => o.value);
-                if (selected.length) filters[key] = selected;
-            });
-            const periods = parseInt(document.getElementById('periods').value) || 30;
-            fetchGenAIConsolidated(filters, periods);
-        });
-
         document.getElementById('genaiForecastSummaryBtn').addEventListener('click', function() {
-            window.open('/genai-forecast-summary', '_blank');
+            const periods = parseInt(document.getElementById('periods').value) || 30;
+            const periodType = document.getElementById('periodType').value;
+            window.open(`/genai-forecast-summary?periods=${periods}&period_type=${periodType}`, '_blank');
         });
-
         document.getElementById('genaiRecommendationsBtn').addEventListener('click', function() {
             window.open('/genai-recommendations', '_blank');
         });

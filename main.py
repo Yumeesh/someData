@@ -8,12 +8,14 @@ import pandas as pd
 import os
 from fastapi import BackgroundTasks
 import asyncio
+from fastapi import Request
 
 app = FastAPI(title="Dynamic Sales Forecasting API")
 
 class ForecastRequest(BaseModel):
     filters: Optional[Dict[str, List[str]]] = None
     periods: Optional[int] = 30
+    period_type: Optional[str] = "days"  # new field
 
 @app.get("/filters")
 def filters():
@@ -26,8 +28,9 @@ def forecast(request: ForecastRequest):
     filtered_df = filter_sales_data(df, request.filters or {})
     if filtered_df.empty:
         raise HTTPException(status_code=404, detail="No data found for the given filters.")
+    # Optionally, you could add period_type info to the response
     forecast_df = forecast_sales(filtered_df, request.periods)
-    return forecast_df.to_dict(orient="records")
+    return {"period_type": request.period_type, "periods": request.periods, "forecast": forecast_df.to_dict(orient="records")}
 
 @app.post("/plot")
 def plot(request: ForecastRequest):
@@ -149,7 +152,7 @@ def genai_insights_endpoint(request: ForecastRequest):
         raise HTTPException(status_code=404, detail="No data found for the given filters.")
     forecast_df = forecast_sales(filtered_df, request.periods)
     forecast_data = forecast_df.to_dict(orient="records")
-    insights = run_async_genai(get_genai_single_insights, forecast_data)
+    insights = run_async_genai(get_genai_single_insights, forecast_data, request.period_type)
     return insights
 
 @app.post("/genai-consolidated-insights")
@@ -158,38 +161,35 @@ def genai_consolidated_insights(request: ForecastRequest):
     from genai_insights import get_genai_consolidated_insights
     df = load_data()
     group_cols = ["Sales Head", "Regional Manager", "Product", "Region"]
-    results = run_async_genai(get_genai_consolidated_insights, df, group_cols, request.periods)
+    results = run_async_genai(get_genai_consolidated_insights, df, group_cols, request.periods, request.period_type)
     return results
 
 @app.get("/genai-forecast-summary-json")
-def genai_forecast_summary_json():
+def genai_forecast_summary_json(periods: int = 30, period_type: str = "days"):
     from utils import filter_sales_data, forecast_sales
     from genai_insights import get_genai_forecast_summary
     df = load_data()
     group_cols = ["Product", "Region", "Sales office", "Sales Head"]
-    summary = run_async_genai(get_genai_forecast_summary, df, group_cols)
-    return summary
+    summary = run_async_genai(get_genai_forecast_summary, df, group_cols, periods, period_type)
+    return {"insights_forecast": summary.get("insights_forecast", [])}
 
 @app.get("/genai-forecast-summary", response_class=HTMLResponse)
-def genai_forecast_summary():
+def genai_forecast_summary(request: Request):
     import requests
-    url = "http://localhost:8000/genai-forecast-summary-json"
+    periods = int(request.query_params.get("periods", 30))
+    period_type = request.query_params.get("period_type", "days")
+    url = f"http://localhost:8000/genai-forecast-summary-json?periods={periods}&period_type={period_type}"
     try:
         resp = requests.get(url)
         data = resp.json()
     except Exception as e:
         return f"<h2>Error fetching summary: {e}</h2>"
-    html = "<h2>GenAI Forecast Summary</h2>"
+    html = f"<h2>GenAI Forecast Summary ({periods} {period_type})</h2>"
     html += "<h3>Insights & Forecasts</h3><ul>"
     for item in data.get('insights_forecast', []):
         for k, v in item.items():
             if v.get('Insight') or v.get('Forecast'):
                 html += f"<li><b>{k}</b>:<br>Insight: {v.get('Insight', 'No insight generated.')}<br>Forecast: {v.get('Forecast', 'No forecast generated.')}</li>"
-    html += "</ul><h3>Recommendations</h3><ul>"
-    for item in data.get('recommendations', []):
-        for k, v in item.items():
-            if v:
-                html += f"<li><b>{k}</b>: {v}</li>"
     html += "</ul>"
     return f"<html><head><title>GenAI Forecast Summary</title></head><body>{html}</body></html>"
 
