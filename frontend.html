@@ -34,6 +34,7 @@
             <button type="button" id="genaiBtn">Get GenAI Insights</button>
             <button type="button" id="genaiConsolidatedBtn">Consolidated Insights</button>
             <button type="button" id="genaiForecastSummaryBtn">GenAI Forecast Summary</button>
+            <button type="button" id="genaiRecommendationsBtn">GenAI Recommendations</button>
         </form>
         <div class="results" id="results"></div>
         <div id="genai-insights" style="margin-top:2rem;"></div>
@@ -202,6 +203,10 @@
 
         document.getElementById('genaiForecastSummaryBtn').addEventListener('click', function() {
             window.open('/genai-forecast-summary', '_blank');
+        });
+
+        document.getElementById('genaiRecommendationsBtn').addEventListener('click', function() {
+            window.open('/genai-recommendations', '_blank');
         });
 
         fetchFilters();

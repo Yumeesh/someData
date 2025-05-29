@@ -193,6 +193,33 @@ def genai_forecast_summary():
     html += "</ul>"
     return f"<html><head><title>GenAI Forecast Summary</title></head><body>{html}</body></html>"
 
+@app.get("/genai-recommendations-json")
+def genai_recommendations_json():
+    from utils import filter_sales_data, forecast_sales
+    from genai_insights import get_genai_forecast_summary
+    df = load_data()
+    group_cols = ["Product", "Region", "Sales office", "Sales Head"]
+    summary = run_async_genai(get_genai_forecast_summary, df, group_cols)
+    # Only return recommendations
+    return {"recommendations": summary.get("recommendations", [])}
+
+@app.get("/genai-recommendations", response_class=HTMLResponse)
+def genai_recommendations():
+    import requests
+    url = "http://localhost:8000/genai-recommendations-json"
+    try:
+        resp = requests.get(url)
+        data = resp.json()
+    except Exception as e:
+        return f"<h2>Error fetching recommendations: {e}</h2>"
+    html = "<h2>GenAI Recommendations</h2><ul>"
+    for item in data.get('recommendations', []):
+        for k, v in item.items():
+            if v:
+                html += f"<li><b>{k}</b>: {v}</li>"
+    html += "</ul>"
+    return f"<html><head><title>GenAI Recommendations</title></head><body>{html}</body></html>"
+
 # Serve the frontend.html as index
 @app.get("/", response_class=HTMLResponse)
 def serve_frontend():
